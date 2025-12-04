@@ -3,26 +3,33 @@ import mediapipe as mp
 import numpy as np
 from ctypes import cast, POINTER
 from comtypes import CLSCTX_ALL
-from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+
+# --- IMPORTS ---
+from pycaw.utils import AudioUtilities
+from pycaw.pycaw import IAudioEndpointVolume
 
 # --- 1. SETUP HAND TRACKING ---
 mp_drawing = mp.solutions.drawing_utils
 mp_hands = mp.solutions.hands
 
-# --- 2. SETUP AUDIO CONTROL (FIXED) ---
-devices = AudioUtilities.GetSpeakers()
-
+# --- 2. SETUP AUDIO CONTROL (INTERNAL ACCESS FIX) ---
+print("[INFO] Setting up Audio...")
 try:
-    # Standard way
-    interface = devices.Activate(
-        IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-except AttributeError:
-    # Fallback for version mismatch (Fixes 'No attribute Activate')
-    print("[INFO] Applying Audio Device Fix...")
-    interface = devices.device.Activate(
-        IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+    # Get the wrapper object
+    devices = AudioUtilities.GetSpeakers()
+    
+    # THE FIX: Access the raw '_dev' internal attribute
+    # This is the actual IMMDevice that has the Activate method
+    print(f"[INFO] Accessing internal device: {devices._dev}")
+    interface = devices._dev.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+    
+    # Cast to the interface pointer
+    volume = cast(interface, POINTER(IAudioEndpointVolume))
+    print("[SUCCESS] Audio Connected!")
 
-volume = cast(interface, POINTER(IAudioEndpointVolume))
+except Exception as e:
+    print(f"[FATAL ERROR] Connection failed: {e}")
+    exit()
 
 # Get current volume range
 volRange = volume.GetVolumeRange()
@@ -35,9 +42,8 @@ wCam, hCam = 640, 480
 cap.set(3, wCam)
 cap.set(4, hCam)
 
-print("[INFO] Starting Volume Control...")
+print("[INFO] Starting Camera...")
 
-# Use Hands Module
 with mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7, max_num_hands=1) as hands:
     while True:
         ret, frame = cap.read()
@@ -51,7 +57,7 @@ with mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7, m
         image.flags.writeable = True
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         
-        # Initialize volume UI variables (Default values)
+        # Initialize volume UI variables
         volBar = 400
         volPer = 0
 
@@ -66,9 +72,8 @@ with mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7, m
                     lmList.append([id, cx, cy])
                 
                 if len(lmList) != 0:
-                    # Index 4 is Thumb Tip, Index 8 is Index Finger Tip
-                    x1, y1 = lmList[4][1], lmList[4][2]
-                    x2, y2 = lmList[8][1], lmList[8][2]
+                    x1, y1 = lmList[4][1], lmList[4][2] # Thumb
+                    x2, y2 = lmList[8][1], lmList[8][2] # Index
                     
                     # Visuals
                     cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
@@ -77,16 +82,13 @@ with mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7, m
                     cv2.line(image, (x1, y1), (x2, y2), (255, 0, 255), 3)
                     cv2.circle(image, (cx, cy), 10, (255, 0, 255), cv2.FILLED)
                     
-                    # Calculate Distance
                     length = np.hypot(x2 - x1, y2 - y1)
                     
-                    # Convert Distance to Volume
-                    # Hand Range: 30 - 200 (You can tweak 200 if your hand is big/small)
+                    # Mapping 30-200mm range to volume
                     vol = np.interp(length, [30, 200], [minVol, maxVol])
                     volBar = np.interp(length, [30, 200], [400, 150])
                     volPer = np.interp(length, [30, 200], [0, 100])
                     
-                    # Apply Volume
                     volume.SetMasterVolumeLevel(vol, None)
                     
                     if length < 30:
