@@ -73,7 +73,7 @@ with mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7, m
                 
                 if len(lmList) != 0:
                     x1, y1 = lmList[4][1], lmList[4][2] # Thumb
-                    x2, y2 = lmList[8][1], lmList[8][2] # Index
+                    x2, y2 = lmList[20][1], lmList[20][2] # Index
                     
                     # Visuals
                     cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
